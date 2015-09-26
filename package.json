@@ -44,7 +44,7 @@
     "mocha": "^2.2.5",
     "phantomjs": "^1.9.17",
     "webpack-stream": "^2.0.0",
-    "zock": "^0.2.2"
+    "zock": "^0.2.3"
   },
   "directories": {
     "test": "test"

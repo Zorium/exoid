@@ -348,12 +348,42 @@ it 'allows custom fetch method to be passed in', ->
     b users[0].name, 'joe'
 
 it 'handles data races', ->
-  # TODO
+  # TODO - correctness unclear, currently last-write wins
   null
 
-it 'handles null results', ->
-  # TODO
-  null
+it 'handles null results array', ->
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    results: [
+      [null]
+    ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.stream 'users.all', {x: 'y'}
+    .take(1).toPromise()
+    .then (users) ->
+      b users, [null]
+
+it 'handles null results value', ->
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    results: [
+      null
+    ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.stream 'users.all', {x: 'y'}
+    .take(1).toPromise()
+    .then (users) ->
+      b users, null
 
 it 'handles non-resource results', ->
   # TODO
