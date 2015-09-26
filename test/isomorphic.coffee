@@ -386,9 +386,22 @@ it 'handles null results value', ->
       b users, null
 
 it 'handles non-resource results', ->
-  # TODO
-  null
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    results: [
+      ['a', 'b', 'c']
+    ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.stream 'users.all', {x: 'y'}
+    .take(1).toPromise()
+    .then (users) ->
+      b users, ['a', 'b', 'c']
 
 it 'caches just on uuid', ->
-  # TODO
+  # TODO - will implement if it makes exoid-router interface simpler
   null
