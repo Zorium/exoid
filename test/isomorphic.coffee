@@ -1,6 +1,7 @@
 _ = require 'lodash'
 b = require 'b-assert'
 zock = require 'zock'
+stringify = require 'json-stable-stringify'
 
 Exoid = require '../src'
 
@@ -307,8 +308,27 @@ it 'expsoes cache stream', ->
       b _.keys(cache).length, 3
 
 it 'allows initializing from cache', ->
-  # TODO
-  null
+  requestCnt = 0
+
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    requestCnt += 1
+    results: [
+      [{id: '123', name: 'joe'}]
+    ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+      cache:
+        "#{stringify {path: 'users', body: '123'}}": {id: '123', name: 'joe'}
+    })
+
+    exo.stream 'users', '123'
+    .take(1).toPromise()
+    .then (user) ->
+      b requestCnt, 0
+      b user.name ,'joe'
 
 it 'allows custom fetch method to be passed in', ->
   # TODO
