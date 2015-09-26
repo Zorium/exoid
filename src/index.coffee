@@ -4,8 +4,9 @@ request = require 'clay-request'
 stringify = require 'json-stable-stringify'
 
 module.exports = class Exoid
-  constructor: ({@api, cache}) ->
+  constructor: ({@api, cache, @fetch}) ->
     cache ?= {}
+    @fetch ?= request
     @_cache = _.mapValues cache, (value) ->
       requestStreams = new Rx.ReplaySubject(1)
       requestStreams.onNext Rx.Observable.just value
@@ -49,7 +50,7 @@ module.exports = class Exoid
     queue = @_batchQueue
     @_batchQueue = []
 
-    request @api,
+    @fetch @api,
       method: 'post'
       body:
         requests: _.pluck queue, 'req'

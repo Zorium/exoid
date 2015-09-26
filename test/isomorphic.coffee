@@ -2,6 +2,7 @@ _ = require 'lodash'
 b = require 'b-assert'
 zock = require 'zock'
 stringify = require 'json-stable-stringify'
+request = require 'clay-request'
 
 Exoid = require '../src'
 
@@ -331,8 +332,20 @@ it 'allows initializing from cache', ->
       b user.name ,'joe'
 
 it 'allows custom fetch method to be passed in', ->
-  # TODO
-  null
+  exo = new Exoid({
+    api: 'http://x.com/exoid'
+    fetch: (url, opts) ->
+      Promise.resolve
+        results: [
+          [{id: '123', name: 'joe'}]
+        ]
+  })
+
+  exo.stream 'users'
+  .take(1).toPromise()
+  .then (users) ->
+    b users.length, 1
+    b users[0].name, 'joe'
 
 it 'handles data races', ->
   # TODO
