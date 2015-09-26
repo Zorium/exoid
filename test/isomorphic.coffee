@@ -241,9 +241,35 @@ it 'invalidates resource, causing re-fetch of streams', ->
       b users[0].name, 'joe'
       b requestCnt, 3
 
-it 'emits stream errors and resolves call errors', ->
-  # TODO - make sure also that errors can't propagate without breaking stream
-  null
+# Note: if streaming errors are needed could add .streamErrors()
+it 'handles errors', ->
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    results: [
+      null
+    ]
+    errors: [
+      {status: '400'}
+    ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.call 'users.all'
+    .then ->
+      throw new Error 'Expected error'
+    , (err) ->
+      b err.status, '400'
+    .then ->
+      exo.stream 'users.all', {x: 'y'}
+      .take(1).toPromise()
+      .then ->
+        throw new Error 'Expected error'
+      , (err) ->
+        b err.status, '400'
+
 
 it 'expsoes cache stream', ->
   # TODO

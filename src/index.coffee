@@ -33,7 +33,7 @@ module.exports = class Exoid
       method: 'post'
       body:
         requests: _.pluck queue, 'req'
-    .then ({results, cache}) =>
+    .then ({results, cache, errors}) =>
       # update explicit caches from response
       _.map cache, ({path, body, result}) =>
         req = {path, body}
@@ -67,7 +67,11 @@ module.exports = class Exoid
 
       # update explicit request cache result, using ref-stream
       # top level replacement only
-      _.map _.zip(queue, results), ([{req, resStreams}, result]) =>
+      _.map _.zip(queue, results, errors),
+      ([{req, resStreams}, result, error]) =>
+        if error?
+          return resStreams.onError error
+
         rootPath = req.path.split('.')[0]
         key = stringify req
 
