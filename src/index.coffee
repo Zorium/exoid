@@ -8,6 +8,10 @@ module.exports = class Exoid
     @_cache = {}
     @_batchQueue = []
 
+    @cacheStreams = new Rx.ReplaySubject(1)
+    @cacheStreams.onNext Rx.Observable.just @_cache
+    @cacheStream = @cacheStreams.switch()
+
   _deferredRequestStream: (req) =>
     cachedStream = null
     Rx.Observable.defer =>
@@ -24,6 +28,18 @@ module.exports = class Exoid
     @_batchQueue.push {req, resStreams}
 
     resStreams.switch()
+
+  _updateCacheStream: =>
+    stream = Rx.Observable.combineLatest _.map @_cache, ({stream}, key) ->
+      stream.map (value) -> [key, value]
+    .map (pairs) ->
+      _.transform pairs, (cache, [key, val]) ->
+        cache[key] = val
+      , {}
+
+    @cacheStreams.onNext stream
+
+  getCacheStream: => @cacheStream
 
   _consumeBatchQueue: =>
     queue = @_batchQueue
@@ -98,6 +114,8 @@ module.exports = class Exoid
           else
             ref = _.find refs, {id: result?.id}
             if ref? then ref else result
+
+      @_updateCacheStream()
 
     .catch (err) ->
       setTimeout ->

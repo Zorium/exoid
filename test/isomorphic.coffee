@@ -1,3 +1,4 @@
+_ = require 'lodash'
 b = require 'b-assert'
 zock = require 'zock'
 
@@ -272,8 +273,38 @@ it 'handles errors', ->
 
 
 it 'expsoes cache stream', ->
-  # TODO
-  null
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    results: [
+      [{id: '123', name: 'joe'}]
+    ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    cache = exo.getCacheStream()
+
+    cache.take(1).toPromise()
+    .then (cache) ->
+      b cache, {}
+    .then ->
+      exo.stream 'users.all', {x: 'y'}
+      .take(1).toPromise()
+    .then ->
+      cache.take(1).toPromise()
+    .then (cache) ->
+      b _.isPlainObject cache
+      b _.keys(cache).length, 2
+    .then ->
+      exo.stream 'users.next'
+      .take(1).toPromise()
+    .then ->
+      cache.take(1).toPromise()
+    .then (cache) ->
+      b _.isPlainObject cache
+      b _.keys(cache).length, 3
 
 it 'allows initializing from cache', ->
   # TODO
@@ -292,5 +323,9 @@ it 'handles null results', ->
   null
 
 it 'handles non-resource results', ->
+  # TODO
+  null
+
+it 'caches just on uuid', ->
   # TODO
   null
