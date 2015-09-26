@@ -1,3 +1,118 @@
-module.exports =
-  compare: (a, b) ->
-    a is b
+_ = require 'lodash'
+Rx = require 'rx-lite'
+request = require 'clay-request'
+stringify = require 'json-stable-stringify'
+
+module.exports = class Exoid
+  constructor: ({@api}) ->
+    @_cache = {}
+    @_batchQueue = []
+
+  _deferredRequestStream: (req) =>
+    cachedStream = null
+    Rx.Observable.defer =>
+      if cachedStream?
+        return cachedStream
+
+      return cachedStream = @_batchCacheRequest req
+
+  _batchCacheRequest: (req) =>
+    if _.isEmpty @_batchQueue
+      setTimeout @_consumeBatchQueue
+
+    resStreams = new Rx.ReplaySubject(1)
+    @_batchQueue.push {req, resStreams}
+
+    resStreams.switch()
+
+  _consumeBatchQueue: =>
+    queue = @_batchQueue
+    @_batchQueue = []
+
+    request @api,
+      method: 'post'
+      body:
+        requests: _.pluck queue, 'req'
+    .then ({results, cache}) =>
+      # update explicit caches from response
+      _.map cache, ({path, body, result}) =>
+        req = {path, body}
+        key = stringify req
+
+        unless @_cache[key]?
+          requestStreams = new Rx.ReplaySubject(1)
+          @_cache[key] = {stream: requestStreams.switch(), requestStreams}
+
+        if result?
+          @_cache[key].requestStreams.onNext Rx.Observable.just result
+        else
+          @_cache[key].requestStreams.onNext @_deferredRequestStream req
+
+      # update implicit (ref-based) resource cache from results
+      # top level refs only
+      _.map _.zip(queue, results), ([{req}, result]) =>
+        rootPath = req.path.split('.')[0]
+        resources = if _.isArray(result) then result else [result]
+
+        _.map resources, (resource) =>
+          unless resource?.id?
+            return
+
+          key = stringify {path: rootPath, body: resource.id}
+          unless @_cache[key]?
+            requestStreams = new Rx.ReplaySubject(1)
+            @_cache[key] = {stream: requestStreams.switch(), requestStreams}
+
+          @_cache[key].requestStreams.onNext Rx.Observable.just resource
+
+      # update explicit request cache result, using ref-stream
+      # top level replacement only
+      _.map _.zip(queue, results), ([{req, resStreams}, result]) =>
+        rootPath = req.path.split('.')[0]
+        key = stringify req
+
+        isBaseResource = req.path is rootPath and req.body is result?.id
+        if isBaseResource
+          resStreams.onNext Rx.Observable.just result
+          return
+
+        resources = if _.isArray(result) then result else [result]
+        refs = _.filter _.map resources, (resource) =>
+          if resource?.id?
+            @_cache[stringify {path: rootPath, body: resource.id}].stream
+          else
+            null
+
+        resStreams.onNext \
+        (if _.isEmpty(refs) then Rx.Observable.just []
+        else Rx.Observable.combineLatest(refs)
+        ).map (refs) ->
+          if _.isArray result
+            _.map result, (resource) ->
+              ref = _.find refs, {id: resource?.id}
+              if ref? then ref else resource
+          else
+            ref = _.find refs, {id: result?.id}
+            if ref? then ref else result
+
+    .catch (err) ->
+      setTimeout ->
+        throw err
+
+  stream: (path, body) =>
+    req = {path, body}
+    key = stringify req
+
+    if @_cache[key]?
+      return @_cache[key].stream
+
+    requestStreams = new Rx.ReplaySubject(1)
+    requestStreams.onNext @_deferredRequestStream req
+
+    @_cache[key] = {stream: requestStreams.switch(), requestStreams}
+
+    return @_cache[key].stream
+
+  call: (path, body) =>
+    @_deferredRequestStream {path, body}
+    .take(1).toPromise()
