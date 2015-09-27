@@ -7,15 +7,16 @@ module.exports = class Exoid
   constructor: ({@api, cache, @fetch}) ->
     cache ?= {}
     @fetch ?= request
-    @_cache = _.mapValues cache, (value) ->
-      requestStreams = new Rx.ReplaySubject(1)
-      requestStreams.onNext Rx.Observable.just value
-      {stream: requestStreams.switch(), requestStreams}
+
+    @_cache = {}
     @_batchQueue = []
 
     @cacheStreams = new Rx.ReplaySubject(1)
     @cacheStreams.onNext Rx.Observable.just @_cache
     @cacheStream = @cacheStreams.switch()
+
+    _.map cache, (value, key) =>
+      @_cacheSet key, Rx.Observable.just value
 
   _deferredRequestStream: (req) =>
     cachedStream = null
@@ -46,6 +47,14 @@ module.exports = class Exoid
 
   getCacheStream: => @cacheStream
 
+  _cacheSet: (key, stream) =>
+    unless @_cache[key]?
+      requestStreams = new Rx.ReplaySubject(1)
+      @_cache[key] = {stream: requestStreams.switch(), requestStreams}
+      @_updateCacheStream()
+
+    @_cache[key].requestStreams.onNext stream
+
   _consumeBatchQueue: =>
     queue = @_batchQueue
     @_batchQueue = []
@@ -60,14 +69,9 @@ module.exports = class Exoid
         req = {path, body}
         key = stringify req
 
-        unless @_cache[key]?
-          requestStreams = new Rx.ReplaySubject(1)
-          @_cache[key] = {stream: requestStreams.switch(), requestStreams}
-
-        if result?
-          @_cache[key].requestStreams.onNext Rx.Observable.just result
-        else
-          @_cache[key].requestStreams.onNext @_deferredRequestStream req
+        @_cacheSet key, \
+          if result? then Rx.Observable.just result
+          else @_deferredRequestStream req
 
       # update implicit (ref-based) resource cache from results
       # top level refs only
@@ -80,11 +84,7 @@ module.exports = class Exoid
             return
 
           key = stringify {path: rootPath, body: resource.id}
-          unless @_cache[key]?
-            requestStreams = new Rx.ReplaySubject(1)
-            @_cache[key] = {stream: requestStreams.switch(), requestStreams}
-
-          @_cache[key].requestStreams.onNext Rx.Observable.just resource
+          @_cacheSet key, Rx.Observable.just resource
 
       # update explicit request cache result, using ref-stream
       # top level replacement only
@@ -120,8 +120,6 @@ module.exports = class Exoid
             ref = _.find refs, {id: result?.id}
             if ref? then ref else result
 
-      @_updateCacheStream()
-
     .catch (err) ->
       setTimeout ->
         throw err
@@ -133,11 +131,7 @@ module.exports = class Exoid
     if @_cache[key]?
       return @_cache[key].stream
 
-    requestStreams = new Rx.ReplaySubject(1)
-    requestStreams.onNext @_deferredRequestStream req
-
-    @_cache[key] = {stream: requestStreams.switch(), requestStreams}
-
+    @_cacheSet key, @_deferredRequestStream req
     return @_cache[key].stream
 
   call: (path, body) =>
