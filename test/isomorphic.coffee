@@ -31,11 +31,17 @@ Exoid = require '../src'
 #     [{id: '123'}]
 #   ]
 #   cache: [
-#     {path: 'users', body: '321', result: {id: '321'}}
-#     {path: 'users', body: '321', result: null}
+#     {path: '321', result: {id: '321'}}
+#     {path: '321'} # invalidate
+#     {path: 'users.all', body: {x: 'y'}, result: [{id: '123'}]} NOT IMPLEMENTED
 #   ]
 # }
 ###################################################################
+
+UUIDS = [
+  '2e6d9526-3df9-4179-b993-8de1029aea38'
+  '60f752c3-4bdd-448a-a3c1-b18a55775daf'
+]
 
 it 'fetches data from remote endpoint, returning a stream', ->
   zock
@@ -45,7 +51,7 @@ it 'fetches data from remote endpoint, returning a stream', ->
     b body.requests[0].path, 'users.all'
     b body.requests[0].body, {x: 'y'}
     results: [
-      [{id: '123', name: 'joe'}]
+      [{id: UUIDS[0], name: 'joe'}]
     ]
   .withOverrides ->
     exo = new Exoid({
@@ -66,7 +72,7 @@ it 'calls rpc on remote endpoint, returning a promise', ->
     b body.requests[0].path, 'users.all'
     b body.requests[0].body, {x: 'y'}
     results: [
-      [{id: '123', name: 'joe'}]
+      [{id: UUIDS[0], name: 'joe'}]
     ]
   .withOverrides ->
     exo = new Exoid({
@@ -86,7 +92,7 @@ it 'caches streams', ->
   .reply ->
     requestCnt += 1
     results: [
-      [{id: '123', name: 'joe'}]
+      [{id: UUIDS[0], name: 'joe'}]
     ]
   .withOverrides ->
     exo = new Exoid({
@@ -113,7 +119,7 @@ it 'doesnt cache calls', ->
   .reply ->
     requestCnt += 1
     results: [
-      [{id: '123', name: 'joe'}]
+      [{id: UUIDS[0], name: 'joe'}]
     ]
   .withOverrides ->
     exo = new Exoid({
@@ -135,8 +141,8 @@ it 'batches requests', ->
   .reply ->
     requestCnt += 1
     results: [
-      [{id: '123', name: 'joe'}]
-      [{id: '123', name: 'joe'}]
+      [{id: UUIDS[0], name: 'joe'}]
+      [{id: UUIDS[0], name: 'joe'}]
     ]
   .withOverrides ->
     exo = new Exoid({
@@ -161,16 +167,16 @@ it 'uses resource cache', ->
     requestCnt += 1
     if body.requests[0].path is 'users'
       results: [
-        [{id: '123', name: 'joe'}]
-        {id: '123', name: 'joe'}
+        [{id: UUIDS[0], name: 'joe'}]
+        {id: UUIDS[0], name: 'joe'}
       ]
       cache: [
-        {path: 'users', body: '321', result: {id: '321', name: 'fry'}}
+        {path: UUIDS[1], result: {id: UUIDS[1], name: 'fry'}}
       ]
     else if body.requests[0].path is 'users.adminify'
       results: [{id: 'xxx', name: 'admin'}]
       cache: [
-        {path: 'users', body: '123', result: {id: '123', name: 'joe-admin'}}
+        {path: UUIDS[0], result: {id: UUIDS[0], name: 'joe-admin'}}
       ]
   .withOverrides ->
     exo = new Exoid({
@@ -181,7 +187,7 @@ it 'uses resource cache', ->
     streamChildren = exo.stream 'users', {x: 'y'}
 
     # stream should update when path is updated
-    streamUser = exo.stream 'users', '123'
+    streamUser = exo.stream 'users', UUIDS[0]
 
     streamChildren.combineLatest streamUser
     .take(1).toPromise()
@@ -190,7 +196,7 @@ it 'uses resource cache', ->
       b user.name, 'joe'
       b requestCnt, 1
     .then ->
-      exo.stream 'users', '321'
+      exo.stream 'users.get', UUIDS[1]
       .take(1).toPromise()
       .then (fry) ->
         b requestCnt, 1
@@ -217,12 +223,12 @@ it 'invalidates resource, causing re-fetch of streams', ->
     requestCnt += 1
     if body.requests[0].path is 'users'
       results: [
-        [{id: '123', name: 'joe'}]
+        [{id: UUIDS[0], name: 'joe'}]
       ]
     else if body.requests[0].path is 'users.invalidate'
       results: [null]
       cache: [
-        {path: 'users', body: '123', result: null}
+        {path: UUIDS[0]}
       ]
   .withOverrides ->
     exo = new Exoid({
@@ -279,7 +285,7 @@ it 'expsoes cache stream', ->
   .post 'http://x.com/exoid'
   .reply ->
     results: [
-      [{id: '123', name: 'joe'}]
+      [{id: UUIDS[0], name: 'joe'}]
     ]
   .withOverrides ->
     exo = new Exoid({
@@ -316,16 +322,19 @@ it 'allows initializing from cache', ->
   .reply ->
     requestCnt += 1
     results: [
-      [{id: '123', name: 'joe'}]
+      [{id: UUIDS[0], name: 'joe'}]
     ]
   .withOverrides ->
     exo = new Exoid({
       api: 'http://x.com/exoid'
       cache:
-        "#{stringify {path: 'users', body: '123'}}": {id: '123', name: 'joe'}
+        "#{stringify {path: 'users', body: UUIDS[0]}}": {
+          id: UUIDS[0]
+          name: 'joe'
+        }
     })
 
-    exo.stream 'users', '123'
+    exo.stream 'users', UUIDS[0]
     .take(1).toPromise()
     .then (user) ->
       b requestCnt, 0
@@ -337,7 +346,7 @@ it 'allows custom fetch method to be passed in', ->
     fetch: (url, opts) ->
       Promise.resolve
         results: [
-          [{id: '123', name: 'joe'}]
+          [{id: UUIDS[0], name: 'joe'}]
         ]
   })
 
@@ -401,7 +410,3 @@ it 'handles non-resource results', ->
     .take(1).toPromise()
     .then (users) ->
       b users, ['a', 'b', 'c']
-
-it 'caches just on uuid', ->
-  # TODO - will implement if it makes exoid-router interface simpler
-  null

@@ -3,6 +3,8 @@ Rx = require 'rx-lite'
 request = require 'clay-request'
 stringify = require 'json-stable-stringify'
 
+uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
 module.exports = class Exoid
   constructor: ({@api, cache, @fetch}) ->
     cache ?= {}
@@ -69,22 +71,17 @@ module.exports = class Exoid
         req = {path, body}
         key = stringify req
 
-        @_cacheSet key, \
-          if result? then Rx.Observable.just result
-          else @_deferredRequestStream req
+        @_cacheSet key, Rx.Observable.just result
 
       # update implicit (ref-based) resource cache from results
       # top level refs only
       _.map _.zip(queue, results), ([{req}, result]) =>
-        rootPath = req.path.split('.')[0]
         resources = if _.isArray(result) then result else [result]
 
         _.map resources, (resource) =>
-          unless resource?.id?
-            return
-
-          key = stringify {path: rootPath, body: resource.id}
-          @_cacheSet key, Rx.Observable.just resource
+          if resource?.id? and uuidRegex.test resource.id
+            key = stringify {path: resource.id}
+            @_cacheSet key, Rx.Observable.just resource
 
       # update explicit request cache result, using ref-stream
       # top level replacement only
@@ -93,25 +90,22 @@ module.exports = class Exoid
         if error?
           return resStreams.onError error
 
-        rootPath = req.path.split('.')[0]
-        key = stringify req
-
-        isBaseResource = req.path is rootPath and req.body is result?.id
-        if isBaseResource
-          resStreams.onNext Rx.Observable.just result
-          return
-
         resources = if _.isArray(result) then result else [result]
         refs = _.filter _.map resources, (resource) =>
-          if resource?.id?
-            @_cache[stringify {path: rootPath, body: resource.id}].stream
+          if resource?.id? and uuidRegex.test resource.id
+            @_cache[stringify {path: resource.id}].stream
           else
             null
 
-        resStreams.onNext \
-        (if _.isEmpty(refs) then Rx.Observable.just []
+        stream = (if _.isEmpty(refs) then Rx.Observable.just []
         else Rx.Observable.combineLatest(refs)
-        ).map (refs) ->
+        ).flatMapLatest (refs) =>
+          # if a sub-resource is invalidated (deleted), re-request
+          if _.some refs, _.isUndefined
+            key = stringify req
+            return @_deferredRequestStream req
+
+          Rx.Observable.just \
           if _.isArray result
             _.map result, (resource) ->
               ref = _.find refs, {id: resource?.id}
@@ -120,6 +114,9 @@ module.exports = class Exoid
             ref = _.find refs, {id: result?.id}
             if ref? then ref else result
 
+        resStreams.onNext stream
+
+
     .catch (err) ->
       setTimeout ->
         throw err
@@ -127,9 +124,13 @@ module.exports = class Exoid
   stream: (path, body) =>
     req = {path, body}
     key = stringify req
+    resourceKey = stringify {path: body}
 
     if @_cache[key]?
       return @_cache[key].stream
+
+    if _.isString(body) and uuidRegex.test(body) and @_cache[resourceKey]?
+      return @_cache[resourceKey].stream
 
     @_cacheSet key, @_deferredRequestStream req
     return @_cache[key].stream
