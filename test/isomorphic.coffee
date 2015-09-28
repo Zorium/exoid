@@ -1,5 +1,6 @@
 _ = require 'lodash'
 b = require 'b-assert'
+log = require 'loga'
 zock = require 'zock'
 stringify = require 'json-stable-stringify'
 request = require 'clay-request'
@@ -41,6 +42,7 @@ Exoid = require '../src'
 UUIDS = [
   '2e6d9526-3df9-4179-b993-8de1029aea38'
   '60f752c3-4bdd-448a-a3c1-b18a55775daf'
+  '97404ab5-40b4-4982-a596-218eb2457082'
 ]
 
 it 'fetches data from remote endpoint, returning a stream', ->
@@ -174,7 +176,7 @@ it 'uses resource cache', ->
         {path: UUIDS[1], result: {id: UUIDS[1], name: 'fry'}}
       ]
     else if body.requests[0].path is 'users.adminify'
-      results: [{id: 'xxx', name: 'admin'}]
+      results: [{id: UUIDS[2], name: 'admin'}]
       cache: [
         {path: UUIDS[0], result: {id: UUIDS[0], name: 'joe-admin'}}
       ]
@@ -410,3 +412,27 @@ it 'handles non-resource results', ->
     .take(1).toPromise()
     .then (users) ->
       b users, ['a', 'b', 'c']
+
+it 'enforces UUID ids', ->
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    results: [
+      [{id: 'NOT_UUID', name: 'joe'}]
+    ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    promise = new Promise (resolve) ->
+      isResolved = false
+      log.on 'error', (err) ->
+        unless isResolved?
+          b err.message, 'ids must be uuid'
+        isResolved = true
+        resolve()
+
+    exo.call 'users.all', {x: 'y'}
+
+    return promise

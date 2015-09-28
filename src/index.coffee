@@ -1,5 +1,6 @@
 _ = require 'lodash'
 Rx = require 'rx-lite'
+log = require 'loga'
 request = require 'clay-request'
 stringify = require 'json-stable-stringify'
 
@@ -79,7 +80,9 @@ module.exports = class Exoid
         resources = if _.isArray(result) then result else [result]
 
         _.map resources, (resource) =>
-          if resource?.id? and uuidRegex.test resource.id
+          if resource?.id?
+            unless uuidRegex.test resource.id
+              throw new Error 'ids must be uuid'
             key = stringify {path: resource.id}
             @_cacheSet key, Rx.Observable.just resource
 
@@ -92,7 +95,9 @@ module.exports = class Exoid
 
         resources = if _.isArray(result) then result else [result]
         refs = _.filter _.map resources, (resource) =>
-          if resource?.id? and uuidRegex.test resource.id
+          if resource?.id?
+            unless uuidRegex.test resource.id
+              throw new Error 'ids must be uuid'
             @_cache[stringify {path: resource.id}].stream
           else
             null
@@ -115,11 +120,8 @@ module.exports = class Exoid
             if ref? then ref else result
 
         resStreams.onNext stream
-
-
     .catch (err) ->
-      setTimeout ->
-        throw err
+      log.error err
 
   stream: (path, body) =>
     req = {path, body}
