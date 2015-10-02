@@ -1,3 +1,5 @@
+require './polyfill'
+
 _ = require 'lodash'
 b = require 'b-assert'
 log = require 'loga'

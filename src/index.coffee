@@ -129,8 +129,7 @@ module.exports = class Exoid
           return resStreams.onError error
 
         resStreams.onNext @_streamResult req, result
-    .catch (err) ->
-      log.error err
+    .catch log.error
 
   getCached: (path, body) =>
     req = {path, body}

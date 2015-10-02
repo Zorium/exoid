@@ -44,7 +44,9 @@
     "karma-phantomjs-launcher": "^0.2.0",
     "mocha": "^2.2.5",
     "phantomjs": "^1.9.17",
+    "promiz": "^1.0.4",
     "webpack-stream": "^2.0.0",
+    "whatwg-fetch": "^0.9.0",
     "zock": "^0.2.3"
   },
   "directories": {

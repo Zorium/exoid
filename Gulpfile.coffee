@@ -8,7 +8,7 @@ istanbul = require 'gulp-coffee-istanbul'
 coffeelint = require 'gulp-coffeelint'
 clayLintConfig = require 'clay-coffeescript-style-guide'
 
-TEST_TIMEOUT = 300
+TEST_TIMEOUT = 1000
 
 paths =
   coffee: ['./src/**/*.coffee', './*.coffee', './test/**/*.coffee']
