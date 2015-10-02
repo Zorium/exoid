@@ -342,6 +342,29 @@ it 'allows initializing from cache', ->
       b requestCnt, 0
       b user.name, 'joe'
 
+it 'allows fetching values from cache', ->
+  requestCnt = 0
+
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    requestCnt += 1
+    results: [null]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+      cache:
+        "#{stringify {path: 'users', body: UUIDS[0]}}": {
+          id: UUIDS[0]
+          name: 'joe'
+        }
+    })
+
+    exo.getCached 'users', UUIDS[0]
+    .then (user) ->
+      b requestCnt, 0
+      b user.name, 'joe'
+
 it 'watches refs when initialized from cache', ->
   requestCnt = 0
 

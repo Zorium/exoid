@@ -132,6 +132,15 @@ module.exports = class Exoid
     .catch (err) ->
       log.error err
 
+  getCached: (path, body) =>
+    req = {path, body}
+    key = stringify req
+
+    if @_cache[key]?
+      @_cache[key].stream.take(1).toPromise()
+    else
+      Promise.resolve null
+
   stream: (path, body) =>
     req = {path, body}
     key = stringify req
