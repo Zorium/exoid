@@ -342,6 +342,57 @@ it 'allows initializing from cache', ->
       b requestCnt, 0
       b user.name ,'joe'
 
+it 'watches refs when initialized from cache', ->
+  requestCnt = 0
+
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    requestCnt += 1
+    if requestCnt is 1
+      results: [
+        null
+      ]
+      cache: [
+        {path: UUIDS[0], result: {id: UUIDS[0], name: 'joe-changed-1'}}
+      ]
+    else
+      results: [
+        {id: UUIDS[0], name: 'joe-changed-2'}
+      ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+      cache:
+        "#{stringify {path: 'users', body: UUIDS[0]}}": {
+          id: UUIDS[0]
+          name: 'joe'
+        }
+    })
+
+    exo.stream 'users.get', UUIDS[0]
+    .take(1).toPromise()
+    .then (user) ->
+      b requestCnt, 0
+      b user.name, 'joe'
+      exo.call 'users.get', UUIDS[0]
+    .then (nulled) ->
+      b nulled, null
+      exo.stream 'users.get', UUIDS[0]
+      .take(1).toPromise()
+    .then (user) ->
+      b requestCnt, 1
+      b user.name, 'joe-changed-1'
+      exo.call 'users.get', UUIDS[0]
+    .then (user) ->
+      b requestCnt, 2
+      b user.name, 'joe-changed-2'
+      exo.stream 'users.get', UUIDS[0]
+      .take(1).toPromise()
+    .then (user) ->
+      b requestCnt, 2
+      b user.name, 'joe-changed-2'
+
 it 'allows custom fetch method to be passed in', ->
   exo = new Exoid({
     api: 'http://x.com/exoid'

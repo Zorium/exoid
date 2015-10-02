@@ -18,8 +18,49 @@ module.exports = class Exoid
     @cacheStreams.onNext Rx.Observable.just @_cache
     @cacheStream = @cacheStreams.switch()
 
-    _.map cache, (value, key) =>
-      @_cacheSet key, Rx.Observable.just value
+    # update implicit (ref-based) resource cache first
+    # top level refs only
+    _.map cache, (result, key) =>
+      resources = if _.isArray(result) then result else [result]
+
+      _.map resources, (resource) =>
+        if resource?.id?
+          unless uuidRegex.test resource.id
+            throw new Error 'ids must be uuid'
+          key = stringify {path: resource.id}
+          @_cacheSet key, Rx.Observable.just resource
+
+    _.map cache, (result, key) =>
+      if @_cache[key]?
+        return null
+
+      resources = if _.isArray(result) then result else [result]
+      refs = _.filter _.map resources, (resource) =>
+        if resource?.id?
+          unless uuidRegex.test resource.id
+            throw new Error 'ids must be uuid'
+          @_cache[stringify {path: resource.id}].stream
+        else
+          null
+
+      stream = (if _.isEmpty(refs) then Rx.Observable.just []
+      else Rx.Observable.combineLatest(refs)
+      ).flatMapLatest (refs) =>
+        # if a sub-resource is invalidated (deleted), re-request
+        if _.some refs, _.isUndefined
+          req = JSON.parse key
+          return @_deferredRequestStream req
+
+        Rx.Observable.just \
+        if _.isArray result
+          _.map result, (resource) ->
+            ref = _.find refs, {id: resource?.id}
+            if ref? then ref else resource
+        else
+          ref = _.find refs, {id: result?.id}
+          if ref? then ref else result
+
+      @_cacheSet key, stream
 
   _deferredRequestStream: (req) =>
     cachedStream = null
