@@ -340,7 +340,7 @@ it 'allows initializing from cache', ->
     .take(1).toPromise()
     .then (user) ->
       b requestCnt, 0
-      b user.name ,'joe'
+      b user.name, 'joe'
 
 it 'watches refs when initialized from cache', ->
   requestCnt = 0
