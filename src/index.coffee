@@ -18,49 +18,55 @@ module.exports = class Exoid
     @cacheStreams.onNext Rx.Observable.just @_cache
     @cacheStream = @cacheStreams.switch()
 
-    # update implicit (ref-based) resource cache first
-    # top level refs only
-    _.map cache, (result, key) =>
-      resources = if _.isArray(result) then result else [result]
-
-      _.map resources, (resource) =>
-        if resource?.id?
-          unless uuidRegex.test resource.id
-            throw new Error 'ids must be uuid'
-          key = stringify {path: resource.id}
-          @_cacheSet key, Rx.Observable.just resource
+    _.map cache, @_cacheRefs
 
     _.map cache, (result, key) =>
-      if @_cache[key]?
+      req = JSON.parse key
+
+      isResource = uuidRegex.test req.path
+      if isResource
         return null
 
-      resources = if _.isArray(result) then result else [result]
-      refs = _.filter _.map resources, (resource) =>
-        if resource?.id?
-          unless uuidRegex.test resource.id
-            throw new Error 'ids must be uuid'
-          @_cache[stringify {path: resource.id}].stream
-        else
-          null
+      @_cacheSet key, @_streamResult req, result
 
-      stream = (if _.isEmpty(refs) then Rx.Observable.just []
-      else Rx.Observable.combineLatest(refs)
-      ).flatMapLatest (refs) =>
-        # if a sub-resource is invalidated (deleted), re-request
-        if _.some refs, _.isUndefined
-          req = JSON.parse key
-          return @_deferredRequestStream req
+  _cacheRefs: (result) =>
+    # top level refs only
+    resources = if _.isArray(result) then result else [result]
 
-        Rx.Observable.just \
-        if _.isArray result
-          _.map result, (resource) ->
-            ref = _.find refs, {id: resource?.id}
-            if ref? then ref else resource
-        else
-          ref = _.find refs, {id: result?.id}
-          if ref? then ref else result
+    _.map resources, (resource) =>
+      if resource?.id?
+        unless uuidRegex.test resource.id
+          throw new Error 'ids must be uuid'
+        key = stringify {path: resource.id}
+        @_cacheSet key, Rx.Observable.just resource
 
-      @_cacheSet key, stream
+  _streamResult: (req, result) =>
+    resources = if _.isArray(result) then result else [result]
+    refs = _.filter _.map resources, (resource) =>
+      if resource?.id?
+        unless uuidRegex.test resource.id
+          throw new Error 'ids must be uuid'
+        @_cache[stringify {path: resource.id}].stream
+      else
+        null
+
+    stream = (if _.isEmpty(refs) then Rx.Observable.just []
+    else Rx.Observable.combineLatest(refs)
+    ).flatMapLatest (refs) =>
+      # if a sub-resource is invalidated (deleted), re-request
+      if _.some refs, _.isUndefined
+        return @_deferredRequestStream req
+
+      Rx.Observable.just \
+      if _.isArray result
+        _.map result, (resource) ->
+          ref = _.find refs, {id: resource?.id}
+          if ref? then ref else resource
+      else
+        ref = _.find refs, {id: result?.id}
+        if ref? then ref else result
+
+    return stream
 
   _deferredRequestStream: (req) =>
     cachedStream = null
@@ -110,22 +116,10 @@ module.exports = class Exoid
     .then ({results, cache, errors}) =>
       # update explicit caches from response
       _.map cache, ({path, body, result}) =>
-        req = {path, body}
-        key = stringify req
+        @_cacheSet stringify({path, body}), Rx.Observable.just result
 
-        @_cacheSet key, Rx.Observable.just result
-
-      # update implicit (ref-based) resource cache from results
-      # top level refs only
-      _.map _.zip(queue, results), ([{req}, result]) =>
-        resources = if _.isArray(result) then result else [result]
-
-        _.map resources, (resource) =>
-          if resource?.id?
-            unless uuidRegex.test resource.id
-              throw new Error 'ids must be uuid'
-            key = stringify {path: resource.id}
-            @_cacheSet key, Rx.Observable.just resource
+      # update implicit caches from results
+      _.map results, @_cacheRefs
 
       # update explicit request cache result, using ref-stream
       # top level replacement only
@@ -134,33 +128,7 @@ module.exports = class Exoid
         if error?
           return resStreams.onError error
 
-        resources = if _.isArray(result) then result else [result]
-        refs = _.filter _.map resources, (resource) =>
-          if resource?.id?
-            unless uuidRegex.test resource.id
-              throw new Error 'ids must be uuid'
-            @_cache[stringify {path: resource.id}].stream
-          else
-            null
-
-        stream = (if _.isEmpty(refs) then Rx.Observable.just []
-        else Rx.Observable.combineLatest(refs)
-        ).flatMapLatest (refs) =>
-          # if a sub-resource is invalidated (deleted), re-request
-          if _.some refs, _.isUndefined
-            key = stringify req
-            return @_deferredRequestStream req
-
-          Rx.Observable.just \
-          if _.isArray result
-            _.map result, (resource) ->
-              ref = _.find refs, {id: resource?.id}
-              if ref? then ref else resource
-          else
-            ref = _.find refs, {id: result?.id}
-            if ref? then ref else result
-
-        resStreams.onNext stream
+        resStreams.onNext @_streamResult req, result
     .catch (err) ->
       log.error err
 
