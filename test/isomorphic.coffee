@@ -154,7 +154,8 @@ it 'batches requests', ->
     })
 
     stream = exo.stream 'users.all', {x: 'y'}
-    call = exo.call 'users.all', {x: 'y'}
+    # Must be different or else it will batch into one request
+    call = exo.call 'users.allAlso', {x: 'y'}
 
     stream.take(1).toPromise()
     .then -> call
@@ -400,7 +401,7 @@ it 'watches refs when initialized from cache', ->
     .then (user) ->
       b requestCnt, 0
       b user.name, 'joe'
-      exo.call 'users.get', UUIDS[0]
+      exo.call 'users.mutate', UUIDS[0]
     .then (nulled) ->
       b nulled, null
       exo.stream 'users.get', UUIDS[0]
@@ -408,7 +409,7 @@ it 'watches refs when initialized from cache', ->
     .then (user) ->
       b requestCnt, 1
       b user.name, 'joe-changed-1'
-      exo.call 'users.get', UUIDS[0]
+      exo.call 'users.mutate', UUIDS[0]
     .then (user) ->
       b requestCnt, 2
       b user.name, 'joe-changed-2'
@@ -512,3 +513,27 @@ it 'enforces UUID ids', ->
     exo.call 'users.all', {x: 'y'}
 
     return promise
+
+it 'caches call responses', ->
+  callCnt = 0
+
+  zock
+  .post 'http://x.com/exoid'
+  .reply ->
+    callCnt += 1
+    results: [
+      [{id: UUIDS[0], name: 'joe'}]
+    ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.call 'users.all'
+    .then (users) ->
+      exo.stream 'users.all'
+      .take(1).toPromise()
+    .then (users) ->
+      b callCnt, 1
+      b users.length, 1
+      b users[0].name, 'joe'

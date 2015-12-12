@@ -155,5 +155,9 @@ module.exports = class Exoid
     return @_cache[key].stream
 
   call: (path, body) =>
-    @_deferredRequestStream {path, body}
-    .take(1).toPromise()
+    req = {path, body}
+    key = stringify req
+
+    stream = @_deferredRequestStream req
+    @_cacheSet key, stream
+    return stream.take(1).toPromise()
