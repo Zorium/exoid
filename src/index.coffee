@@ -68,20 +68,20 @@ module.exports = class Exoid
 
     return stream
 
-  _deferredRequestStream: (req) =>
+  _deferredRequestStream: (req, isErrorable) =>
     cachedStream = null
     Rx.Observable.defer =>
       if cachedStream?
         return cachedStream
 
-      return cachedStream = @_batchCacheRequest req
+      return cachedStream = @_batchCacheRequest req, isErrorable
 
-  _batchCacheRequest: (req) =>
+  _batchCacheRequest: (req, isErrorable) =>
     if _.isEmpty @_batchQueue
       setTimeout @_consumeBatchQueue
 
     resStreams = new Rx.ReplaySubject(1)
-    @_batchQueue.push {req, resStreams}
+    @_batchQueue.push {req, resStreams, isErrorable}
 
     resStreams.switch()
 
@@ -124,11 +124,19 @@ module.exports = class Exoid
       # update explicit request cache result, using ref-stream
       # top level replacement only
       _.map _.zip(queue, results, errors),
-      ([{req, resStreams}, result, error]) =>
-        if error?
-          return resStreams.onError error
-
-        resStreams.onNext @_streamResult req, result
+      ([{req, resStreams, isErrorable}, result, error]) =>
+        if isErrorable and error?
+          resStreams.onError error
+        else if not error?
+          resStreams.onNext @_streamResult req, result
+        else
+          log.error error
+    , (error) ->
+      _.map queue, ({resStreams, isErrorable}) ->
+        if isErrorable
+          resStreams.onError error
+        else
+          log.error error
     .catch log.error
 
   getCached: (path, body) =>
@@ -158,6 +166,7 @@ module.exports = class Exoid
     req = {path, body}
     key = stringify req
 
-    stream = @_deferredRequestStream req
-    @_cacheSet key, stream
-    return stream.take(1).toPromise()
+    stream = @_deferredRequestStream req, true
+    return stream.take(1).toPromise().then (result) =>
+      @_cacheSet key, Rx.Observable.just result
+      return result

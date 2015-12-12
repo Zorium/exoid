@@ -276,14 +276,59 @@ it 'handles errors', ->
       throw new Error 'Expected error'
     , (err) ->
       b err.status, '400'
-    .then ->
-      exo.stream 'users.all', {x: 'y'}
-      .take(1).toPromise()
-      .then ->
-        throw new Error 'Expected error'
-      , (err) ->
-        b err.status, '400'
+  .then ->
+    zock
+    .post 'http://x.com/exoid'
+    .reply 401
+    .withOverrides ->
+      exo = new Exoid({
+        api: 'http://x.com/exoid'
+      })
 
+      exo.call 'users.all'
+      .then ->
+        throw new Error 'error expected'
+      , (err) ->
+        b err.status, 401
+
+it 'does not propagate errors to streams', ->
+  zock
+  .post 'http://x.com/exoid'
+  .reply 401
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    new Promise (resolve, reject) ->
+      exo.stream 'users.all'
+      .take(1).toPromise().then -> reject new Error 'Should not reject'
+
+      setTimeout ->
+        resolve null
+      , 20
+  .then ->
+    zock
+    .post 'http://x.com/exoid'
+    .reply ->
+      results: [
+        null
+      ]
+      errors: [
+        {status: '400'}
+      ]
+    .withOverrides ->
+      exo = new Exoid({
+        api: 'http://x.com/exoid'
+      })
+
+      new Promise (resolve, reject) ->
+        exo.stream 'users.all'
+        .take(1).toPromise().then -> reject new Error 'Should not reject'
+
+        setTimeout ->
+          resolve null
+        , 20
 
 it 'expsoes cache stream', ->
   zock
