@@ -170,3 +170,10 @@ module.exports = class Exoid
     return stream.take(1).toPromise().then (result) =>
       @_cacheSet key, Rx.Observable.just result
       return result
+
+  invalidateAll: =>
+    _.map @_cache, ({requestStreams}, key) =>
+      req = JSON.parse key
+      if _.isString(req.path) and uuidRegex.test(req.path)
+        return
+      requestStreams.onNext @_deferredRequestStream req

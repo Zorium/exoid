@@ -582,3 +582,33 @@ it 'caches call responses', ->
       b callCnt, 1
       b users.length, 1
       b users[0].name, 'joe'
+
+it 'invalidates cached data', ->
+  callCnt = 0
+
+  zock
+  .post 'http://x.com/exoid'
+  .reply ({body}) ->
+    callCnt += 1
+    if callCnt > 1
+      results: [
+        [{id: UUIDS[0], name: 'jim'}]
+      ]
+    else
+      results: [
+        [{id: UUIDS[0], name: 'joe'}]
+      ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.stream 'users.all', {x: 'y'}
+    .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'joe'
+      exo.invalidateAll()
+      exo.stream 'users.all', {x: 'y'}
+      .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'jim'
