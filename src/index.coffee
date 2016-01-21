@@ -157,7 +157,13 @@ module.exports = class Exoid
       return @_cache[key].stream
 
     if _.isString(body) and uuidRegex.test(body) and @_cache[resourceKey]?
-      return @_cache[resourceKey].stream
+      resultPromise = @_cache[resourceKey].stream.take(1).toPromise()
+      stream = Rx.Observable.defer ->
+        resultPromise
+      .flatMapLatest (result) =>
+        @_streamResult req, result
+      @_cacheSet key, stream
+      return @_cache[key].stream
 
     @_cacheSet key, @_deferredRequestStream req
     return @_cache[key].stream
@@ -171,9 +177,34 @@ module.exports = class Exoid
       @_cacheSet key, Rx.Observable.just result
       return result
 
+  update: (result) =>
+    @_cacheRefs result
+    return null
+
   invalidateAll: =>
     _.map @_cache, ({requestStreams}, key) =>
       req = JSON.parse key
       if _.isString(req.path) and uuidRegex.test(req.path)
         return
       requestStreams.onNext @_deferredRequestStream req
+    return null
+
+  invalidate: (path, body) =>
+    req = {path, body}
+    key = stringify req
+    resourceKey = stringify {path}
+
+    if _.isString(path) and uuidRegex.test(path) and @_cache[resourceKey]?
+      @_cache[resourceKey].requestStreams.onNext Rx.Observable.just(undefined)
+      return null
+
+    _.map @_cache, ({requestStreams}, cacheKey) =>
+      req = JSON.parse cacheKey
+      if _.isString(req.path) and uuidRegex.test(req.path)
+        return
+
+      if req.path is path and _.isUndefined body
+        requestStreams.onNext @_deferredRequestStream req
+      else if cacheKey is key
+        requestStreams.onNext @_deferredRequestStream req
+    return null

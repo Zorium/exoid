@@ -583,7 +583,37 @@ it 'caches call responses', ->
       b users.length, 1
       b users[0].name, 'joe'
 
-it 'invalidates cached data', ->
+it 'invalidates all cached data', ->
+  callCnt = 0
+  zock
+  .post 'http://x.com/exoid'
+  .reply ({body}) ->
+    callCnt += 1
+    if callCnt > 1
+      results: [
+        [{id: UUIDS[0], name: 'jim'}]
+      ]
+    else
+      results: [
+        [{id: UUIDS[0], name: 'joe'}]
+      ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.stream 'users.all', {x: 'y'}
+    .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'joe'
+      exo.invalidateAll()
+      exo.stream 'users.all', {x: 'y'}
+      .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'jim'
+
+# TODO: improve tests around this
+it 'invalidates resource by id', ->
   callCnt = 0
 
   zock
@@ -607,7 +637,94 @@ it 'invalidates cached data', ->
     .take(1).toPromise()
     .then (users) ->
       b users[0].name, 'joe'
-      exo.invalidateAll()
+      exo.invalidate(UUIDS[0])
+      exo.stream 'users.all', {x: 'y'}
+      .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'jim'
+
+it 'updates resources', ->
+  zock
+  .post 'http://x.com/exoid'
+  .reply ({body}) ->
+    results: [
+      [{id: UUIDS[0], name: 'joe'}]
+    ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.stream 'users.all', {x: 'y'}
+    .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'joe'
+      exo.update({id: UUIDS[0], name: 'xxx'})
+      exo.stream 'users.all', {x: 'y'}
+      .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'xxx'
+
+it 'invalidates resources by path', ->
+  callCnt = 0
+
+  zock
+  .post 'http://x.com/exoid'
+  .reply ({body}) ->
+    callCnt += 1
+    if callCnt > 1
+      results: [
+        [{id: UUIDS[0], name: 'jim'}]
+      ]
+    else
+      results: [
+        [{id: UUIDS[0], name: 'joe'}]
+      ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.stream 'users.all', {x: 'y'}
+    .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'joe'
+      exo.invalidate 'users.all'
+      exo.stream 'users.all', {x: 'y'}
+      .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'jim'
+
+it 'invalidates resources by path and body', ->
+  callCnt = 0
+
+  zock
+  .post 'http://x.com/exoid'
+  .reply ({body}) ->
+    callCnt += 1
+    if callCnt > 1
+      results: [
+        [{id: UUIDS[0], name: 'jim'}]
+      ]
+    else
+      results: [
+        [{id: UUIDS[0], name: 'joe'}]
+      ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.stream 'users.all', {x: 'y'}
+    .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'joe'
+      exo.invalidate 'users.all', {x: 'NOT_Y'}
+      exo.stream 'users.all', {x: 'y'}
+      .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'joe'
+      exo.invalidate 'users.all', {x: 'y'}
       exo.stream 'users.all', {x: 'y'}
       .take(1).toPromise()
     .then (users) ->
