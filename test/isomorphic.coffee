@@ -275,6 +275,7 @@ it 'handles errors', ->
     .then ->
       throw new Error 'Expected error'
     , (err) ->
+      b err instanceof Error
       b err.status, '400'
   .then ->
     zock
@@ -289,6 +290,7 @@ it 'handles errors', ->
       .then ->
         throw new Error 'error expected'
       , (err) ->
+        b err instanceof Error
         b err.status, 401
 
 it 'does not propagate errors to streams', ->
