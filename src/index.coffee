@@ -1,6 +1,5 @@
 _ = require 'lodash'
 Rx = require 'rx-lite'
-log = require 'loga'
 request = require 'clay-request'
 stringify = require 'json-stable-stringify'
 
@@ -30,22 +29,32 @@ module.exports = class Exoid
       @_cacheSet key, @_streamResult req, result
 
   _cacheRefs: (result) =>
+    unless @_isResultStreamable result
+      throw new Error 'ids must be uuid'
+
     # top level refs only
     resources = if _.isArray(result) then result else [result]
 
     _.map resources, (resource) =>
       if resource?.id?
-        unless uuidRegex.test resource.id
-          throw new Error 'ids must be uuid'
         key = stringify {path: resource.id}
         @_cacheSet key, Rx.Observable.just resource
 
+  _isResultStreamable: (result) ->
+    resources = if _.isArray(result) then result else [result]
+    _.every resources, (resource) ->
+      if resource?.id?
+        uuidRegex.test resource.id
+      else
+        true
+
   _streamResult: (req, result) =>
+    unless @_isResultStreamable result
+      throw new Error 'ids must be uuid'
+
     resources = if _.isArray(result) then result else [result]
     refs = _.filter _.map resources, (resource) =>
       if resource?.id?
-        unless uuidRegex.test resource.id
-          throw new Error 'ids must be uuid'
         @_cache[stringify {path: resource.id}].stream
       else
         null
@@ -68,20 +77,20 @@ module.exports = class Exoid
 
     return stream
 
-  _deferredRequestStream: (req, isErrorable) =>
+  _deferredRequestStream: (req) =>
     cachedStream = null
     Rx.Observable.defer =>
       if cachedStream?
         return cachedStream
 
-      return cachedStream = @_batchCacheRequest req, isErrorable
+      return cachedStream = @_batchCacheRequest req
 
-  _batchCacheRequest: (req, isErrorable) =>
+  _batchCacheRequest: (req) =>
     if _.isEmpty @_batchQueue
       setTimeout @_consumeBatchQueue
 
     resStreams = new Rx.ReplaySubject(1)
-    @_batchQueue.push {req, resStreams, isErrorable}
+    @_batchQueue.push {req, resStreams}
 
     resStreams.switch()
 
@@ -113,6 +122,10 @@ module.exports = class Exoid
       method: 'post'
       body:
         requests: _.pluck queue, 'req'
+    .then (res) =>
+      unless _.every res.results, @_isResultStreamable
+        throw new Error 'ids must be uuid'
+      return res
     .then ({results, cache, errors}) =>
       # update explicit caches from response
       _.map cache, ({path, body, result}) =>
@@ -124,21 +137,16 @@ module.exports = class Exoid
       # update explicit request cache result, using ref-stream
       # top level replacement only
       _.map _.zip(queue, results, errors),
-      ([{req, resStreams, isErrorable}, result, error]) =>
-        if isErrorable and error?
+      ([{req, resStreams}, result, error]) =>
+        if error?
           properError = new Error "#{JSON.stringify error}"
           resStreams.onError _.defaults properError, error
-        else if not error?
+        else
           resStreams.onNext @_streamResult req, result
-        else
-          log.error error
     , (error) ->
-      _.map queue, ({resStreams, isErrorable}) ->
-        if isErrorable
-          resStreams.onError error
-        else
-          log.error error
-    .catch log.error
+      _.map queue, ({resStreams}) ->
+        resStreams.onError error
+    .catch (err) -> console.error err # !unreachable
 
   getCached: (path, body) =>
     req = {path, body}
@@ -173,7 +181,7 @@ module.exports = class Exoid
     req = {path, body}
     key = stringify req
 
-    stream = @_deferredRequestStream req, true
+    stream = @_deferredRequestStream req
     return stream.take(1).toPromise().then (result) =>
       @_cacheSet key, Rx.Observable.just result
       return result

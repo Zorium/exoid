@@ -2,7 +2,6 @@ require './polyfill'
 
 _ = require 'lodash'
 b = require 'b-assert'
-log = require 'loga'
 zock = require 'zock'
 stringify = require 'json-stable-stringify'
 request = require 'clay-request'
@@ -293,7 +292,7 @@ it 'handles errors', ->
         b err instanceof Error
         b err.status, 401
 
-it 'does not propagate errors to streams', ->
+it 'propagates errors to streams', ->
   zock
   .post 'http://x.com/exoid'
   .reply 401
@@ -304,11 +303,11 @@ it 'does not propagate errors to streams', ->
 
     new Promise (resolve, reject) ->
       exo.stream 'users.all'
-      .take(1).toPromise().then -> reject new Error 'Should not reject'
+      .take(1).toPromise().catch -> resolve null
 
       setTimeout ->
-        resolve null
-      , 20
+        reject new Error 'Should not reject'
+      , 200
   .then ->
     zock
     .post 'http://x.com/exoid'
@@ -326,11 +325,11 @@ it 'does not propagate errors to streams', ->
 
       new Promise (resolve, reject) ->
         exo.stream 'users.all'
-        .take(1).toPromise().then -> reject new Error 'Should not reject'
+        .take(1).toPromise().catch -> resolve null
 
         setTimeout ->
-          resolve null
-        , 20
+          reject new Error 'Should not reject'
+        , 200
 
 it 'expsoes cache stream', ->
   zock
@@ -549,17 +548,9 @@ it 'enforces UUID ids', ->
       api: 'http://x.com/exoid'
     })
 
-    promise = new Promise (resolve) ->
-      isResolved = false
-      log.on 'error', (err) ->
-        unless isResolved?
-          b err.message, 'ids must be uuid'
-        isResolved = true
-        resolve()
-
     exo.call 'users.all', {x: 'y'}
-
-    return promise
+    .then (-> throw new Error 'expected error'), (err) ->
+      b err.message, 'ids must be uuid'
 
 it 'caches call responses', ->
   callCnt = 0
@@ -613,6 +604,37 @@ it 'invalidates all cached data', ->
       .take(1).toPromise()
     .then (users) ->
       b users[0].name, 'jim'
+
+it 'passes errors after invalidating cache', ->
+  callCnt = 0
+  zock
+  .post 'http://x.com/exoid'
+  .reply ({body}) ->
+    callCnt += 1
+    if callCnt > 1
+      results: [
+        null
+      ]
+      errors: [
+        {status: '400'}
+      ]
+    else
+      results: [
+        [{id: UUIDS[0], name: 'joe'}]
+      ]
+  .withOverrides ->
+    exo = new Exoid({
+      api: 'http://x.com/exoid'
+    })
+
+    exo.stream 'users.all'
+    .take(1).toPromise()
+    .then (users) ->
+      b users[0].name, 'joe'
+      exo.invalidateAll()
+      exo.stream 'users.all'
+      .take(1).toPromise()
+    .then (-> throw new Error 'Expected error'), (-> null)
 
 # TODO: improve tests around this
 it 'invalidates resource by id', ->
