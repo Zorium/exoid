@@ -160,17 +160,30 @@ module.exports = class Exoid
   stream: (path, body) =>
     req = {path, body}
     key = stringify req
-    resourceKey = stringify {path: body}
 
     if @_cache[key]?
       return @_cache[key].stream
 
+    resourceKey = stringify {path: body}
     if _.isString(body) and uuidRegex.test(body) and @_cache[resourceKey]?
       resultPromise = @_cache[resourceKey].stream.take(1).toPromise()
       stream = Rx.Observable.defer ->
         resultPromise
       .flatMapLatest (result) =>
         @_streamResult req, result
+      @_cacheSet key, stream
+      return @_cache[key].stream
+
+    # Breaking change, returns cache if array of cached ids
+    isCachedArrayIds = _.isArray(body) and _.every body, (id) =>
+      uuidRegex.test(id) and @_cache[stringify {path: id}]
+    if isCachedArrayIds
+      resultPromises = _.map body, (id) =>
+        @_cache[stringify {path: id}].stream.take(1).toPromise()
+      stream = Rx.Observable.defer ->
+        Promise.all resultPromises
+      .flatMapLatest (results) =>
+        @_streamResult req, results
       @_cacheSet key, stream
       return @_cache[key].stream
 
