@@ -24,7 +24,7 @@
     "coffee-script": "^1.9.3",
     "json-stable-stringify": "^1.0.0",
     "lodash": "^3.10.0",
-    "rx-lite": "^4.0.0"
+    "rxjs": "^5.2.0"
   },
   "devDependencies": {
     "b-assert": "^0.1.2",

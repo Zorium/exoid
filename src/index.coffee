@@ -1,5 +1,5 @@
 _ = require 'lodash'
-Rx = require 'rx-lite'
+Rx = require 'rxjs/Rx'
 request = require 'clay-request'
 stringify = require 'json-stable-stringify'
 
@@ -14,7 +14,7 @@ module.exports = class Exoid
     @_batchQueue = []
 
     @cacheStreams = new Rx.ReplaySubject(1)
-    @cacheStreams.onNext Rx.Observable.just @_cache
+    @cacheStreams.next Rx.Observable.of @_cache
     @cacheStream = @cacheStreams.switch()
 
     _.map cache, @_cacheRefs
@@ -38,7 +38,7 @@ module.exports = class Exoid
     _.map resources, (resource) =>
       if resource?.id?
         key = stringify {path: resource.id}
-        @_cacheSet key, Rx.Observable.just resource
+        @_cacheSet key, Rx.Observable.of resource
 
   _isResultStreamable: (result) ->
     resources = if _.isArray(result) then result else [result]
@@ -59,14 +59,14 @@ module.exports = class Exoid
       else
         null
 
-    stream = (if _.isEmpty(refs) then Rx.Observable.just []
+    stream = (if _.isEmpty(refs) then Rx.Observable.of []
     else Rx.Observable.combineLatest(refs)
-    ).flatMapLatest (refs) =>
+    ).switchMap (refs) =>
       # if a sub-resource is invalidated (deleted), re-request
       if _.some refs, _.isUndefined
         return @_deferredRequestStream req
 
-      Rx.Observable.just \
+      Rx.Observable.of \
       if _.isArray result
         _.map result, (resource) ->
           ref = _.find refs, {id: resource?.id}
@@ -102,7 +102,7 @@ module.exports = class Exoid
         cache[key] = val
       , {}
 
-    @cacheStreams.onNext stream
+    @cacheStreams.next stream
 
   getCacheStream: => @cacheStream
 
@@ -112,7 +112,7 @@ module.exports = class Exoid
       @_cache[key] = {stream: requestStreams.switch(), requestStreams}
       @_updateCacheStream()
 
-    @_cache[key].requestStreams.onNext stream
+    @_cache[key].requestStreams.next stream
 
   _consumeBatchQueue: =>
     queue = @_batchQueue
@@ -129,7 +129,7 @@ module.exports = class Exoid
     .then ({results, cache, errors}) =>
       # update explicit caches from response
       _.map cache, ({path, body, result}) =>
-        @_cacheSet stringify({path, body}), Rx.Observable.just result
+        @_cacheSet stringify({path, body}), Rx.Observable.of result
 
       # update implicit caches from results
       _.map results, @_cacheRefs
@@ -140,12 +140,12 @@ module.exports = class Exoid
       ([{req, resStreams}, result, error]) =>
         if error?
           properError = new Error "#{JSON.stringify error}"
-          resStreams.onError _.defaults properError, error
+          resStreams.error _.defaults properError, error
         else
-          resStreams.onNext @_streamResult req, result
+          resStreams.next @_streamResult req, result
     , (error) ->
       _.map queue, ({resStreams}) ->
-        resStreams.onError error
+        resStreams.error error
     .catch (err) -> console.error err # !unreachable
 
   getCached: (path, body) =>
@@ -169,7 +169,7 @@ module.exports = class Exoid
       resultPromise = @_cache[resourceKey].stream.take(1).toPromise()
       stream = Rx.Observable.defer ->
         resultPromise
-      .flatMapLatest (result) =>
+      .switchMap (result) =>
         @_streamResult req, result
       @_cacheSet key, stream
       return @_cache[key].stream
@@ -182,7 +182,7 @@ module.exports = class Exoid
         @_cache[stringify {path: id}].stream.take(1).toPromise()
       stream = Rx.Observable.defer ->
         Promise.all resultPromises
-      .flatMapLatest (results) =>
+      .switchMap (results) =>
         @_streamResult req, results
       @_cacheSet key, stream
       return @_cache[key].stream
@@ -196,7 +196,7 @@ module.exports = class Exoid
 
     stream = @_deferredRequestStream req
     return stream.take(1).toPromise().then (result) =>
-      @_cacheSet key, Rx.Observable.just result
+      @_cacheSet key, Rx.Observable.of result
       return result
 
   update: (result) =>
@@ -208,7 +208,7 @@ module.exports = class Exoid
       req = JSON.parse key
       if _.isString(req.path) and uuidRegex.test(req.path)
         return
-      requestStreams.onNext @_deferredRequestStream req
+      requestStreams.next @_deferredRequestStream req
     return null
 
   invalidate: (path, body) =>
@@ -217,7 +217,7 @@ module.exports = class Exoid
     resourceKey = stringify {path}
 
     if _.isString(path) and uuidRegex.test(path) and @_cache[resourceKey]?
-      @_cache[resourceKey].requestStreams.onNext Rx.Observable.just(undefined)
+      @_cache[resourceKey].requestStreams.next Rx.Observable.of(undefined)
       return null
 
     _.map @_cache, ({requestStreams}, cacheKey) =>
@@ -226,7 +226,7 @@ module.exports = class Exoid
         return
 
       if req.path is path and _.isUndefined body
-        requestStreams.onNext @_deferredRequestStream req
+        requestStreams.next @_deferredRequestStream req
       else if cacheKey is key
-        requestStreams.onNext @_deferredRequestStream req
+        requestStreams.next @_deferredRequestStream req
     return null
