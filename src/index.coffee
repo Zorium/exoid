@@ -121,7 +121,7 @@ module.exports = class Exoid
     @fetch @api,
       method: 'post'
       body:
-        requests: _.pluck queue, 'req'
+        requests: _.map queue, 'req'
     .then (res) =>
       unless _.every res.results, @_isResultStreamable
         throw new Error 'ids must be uuid'
