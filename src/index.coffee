@@ -139,13 +139,19 @@ module.exports = class Exoid
       _.map _.zip(queue, results, errors),
       ([{req, resStreams}, result, error]) =>
         if error?
-          properError = new Error "#{JSON.stringify error}"
-          resStreams.error _.defaults properError, error
+          if window?
+            console.error new Error "#{JSON.stringify error}"
+          else
+            properError = new Error "#{JSON.stringify error}"
+            resStreams.error _.defaults properError, error
         else
           resStreams.next @_streamResult req, result
     , (error) ->
-      _.map queue, ({resStreams}) ->
-        resStreams.error error
+      if window?
+        console.error error
+      else
+        _.map queue, ({resStreams}) ->
+          resStreams.error error
     .catch (err) -> console.error err # !unreachable
 
   getCached: (path, body) =>
