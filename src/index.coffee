@@ -77,20 +77,20 @@ module.exports = class Exoid
 
     return stream
 
-  _deferredRequestStream: (req) =>
+  _deferredRequestStream: (req, alwaysError) =>
     cachedStream = null
     Rx.Observable.defer =>
       if cachedStream?
         return cachedStream
 
-      return cachedStream = @_batchCacheRequest req
+      return cachedStream = @_batchCacheRequest req, alwaysError
 
-  _batchCacheRequest: (req) =>
+  _batchCacheRequest: (req, alwaysError) =>
     if _.isEmpty @_batchQueue
       setTimeout @_consumeBatchQueue
 
     resStreams = new Rx.ReplaySubject(1)
-    @_batchQueue.push {req, resStreams}
+    @_batchQueue.push {req, resStreams, alwaysError}
 
     resStreams.switch()
 
@@ -137,9 +137,9 @@ module.exports = class Exoid
       # update explicit request cache result, using ref-stream
       # top level replacement only
       _.map _.zip(queue, results, errors),
-      ([{req, resStreams}, result, error]) =>
+      ([{req, resStreams, alwaysError}, result, error]) =>
         if error?
-          if window?
+          if window? and not alwaysError
             console.error new Error "#{JSON.stringify error}"
           else
             properError = new Error "#{JSON.stringify error}"
@@ -200,7 +200,7 @@ module.exports = class Exoid
     req = {path, body}
     key = stringify req
 
-    stream = @_deferredRequestStream req
+    stream = @_deferredRequestStream req, true
     return stream.take(1).toPromise().then (result) =>
       @_cacheSet key, Rx.Observable.of result
       return result
