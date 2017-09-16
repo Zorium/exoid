@@ -2,9 +2,11 @@
 
 Interface with exoid compatible APIs
 
+Depends on `Promise()` and `fetch()`
+
 ```coffee
 Exoid = require 'exoid'
-request = require 'clay-request'
+request = require 'iso-request'
 
 @exoid = new Exoid
   api: config.API_URL + '/exoid'

@@ -1,6 +1,6 @@
 _ = require 'lodash'
 Rx = require 'rxjs/Rx'
-request = require 'clay-request'
+request = require 'iso-request'
 stringify = require 'json-stable-stringify'
 
 uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -10,12 +10,10 @@ module.exports = class Exoid
     cache ?= {}
     @fetch ?= request
 
+    @_publicCache = new Rx.BehaviorSubject {}
+
     @_cache = {}
     @_batchQueue = []
-
-    @cacheStreams = new Rx.ReplaySubject(1)
-    @cacheStreams.next Rx.Observable.of @_cache
-    @cacheStream = @cacheStreams.switch()
 
     _.map cache, @_cacheRefs
 
@@ -94,23 +92,18 @@ module.exports = class Exoid
 
     resStreams.switch()
 
-  _updateCacheStream: =>
-    stream = Rx.Observable.combineLatest _.map @_cache, ({stream}, key) ->
-      stream.map (value) -> [key, value]
-    .map (pairs) ->
-      _.transform pairs, (cache, [key, val]) ->
-        cache[key] = val
-      , {}
-
-    @cacheStreams.next stream
-
-  getCacheStream: => @cacheStream
+  getCacheStream: => @_publicCache
 
   _cacheSet: (key, stream) =>
     unless @_cache[key]?
       requestStreams = new Rx.ReplaySubject(1)
-      @_cache[key] = {stream: requestStreams.switch(), requestStreams}
-      @_updateCacheStream()
+      @_cache[key] = {
+        stream: requestStreams.switch().do (val) =>
+          @_publicCache.next _.defaults {
+            "#{key}": val
+          }, @_publicCache.getValue()
+        requestStreams
+      }
 
     @_cache[key].requestStreams.next stream
 
@@ -149,6 +142,9 @@ module.exports = class Exoid
     , (error) ->
       if window?
         console.error error
+        _.map queue, ({resStreams, alwaysError}) ->
+          if alwaysError
+            resStreams.error error
       else
         _.map queue, ({resStreams}) ->
           resStreams.error error

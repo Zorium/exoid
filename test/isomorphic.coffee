@@ -1,10 +1,8 @@
-require './polyfill'
-
 _ = require 'lodash'
 b = require 'b-assert'
 zock = require 'zock'
 stringify = require 'json-stable-stringify'
-request = require 'clay-request'
+request = require 'iso-request'
 
 Exoid = require '../src'
 
@@ -256,10 +254,6 @@ it 'invalidates resource, causing re-fetch of streams', ->
 
 # Note: if streaming errors are needed could add .streamErrors()
 it 'handles errors', ->
-  # FIXME: this is ugly...
-  if window?
-    return null
-
   zock
   .post 'http://x.com/exoid'
   .reply ->
@@ -294,9 +288,9 @@ it 'handles errors', ->
         throw new Error 'error expected'
       , (err) ->
         b err instanceof Error
-        b err.status, 401
+        b err.res.status, 401
 
-it 'propagates errors to streams', ->
+it 'propagates errors to streams (server-side only)', ->
   zock
   .post 'http://x.com/exoid'
   .reply 401
@@ -306,12 +300,19 @@ it 'propagates errors to streams', ->
     })
 
     new Promise (resolve, reject) ->
-      exo.stream 'users.all'
-      .take(1).toPromise().catch -> resolve null
+      if window?
+        exo.stream 'users.all'
+        .take(1).toPromise()
+        .then reject
+        .catch reject
+        setTimeout resolve, 100
+      else
+        exo.stream 'users.all'
+        .take(1).toPromise().catch -> resolve null
 
-      setTimeout ->
-        reject new Error 'Should not reject'
-      , 200
+        setTimeout ->
+          reject new Error 'Should not reject'
+        , 200
   .then ->
     zock
     .post 'http://x.com/exoid'
@@ -328,12 +329,20 @@ it 'propagates errors to streams', ->
       })
 
       new Promise (resolve, reject) ->
-        exo.stream 'users.all'
-        .take(1).toPromise().catch -> resolve null
+        if window?
+          exo.stream 'users.all'
+          .take(1).toPromise()
+          .then reject
+          .catch reject
+          setTimeout resolve, 100
+        else
+          exo.stream 'users.all'
+          .take(1).toPromise().catch -> resolve null
 
-        setTimeout ->
-          reject new Error 'Should not reject'
-        , 200
+          setTimeout ->
+            reject new Error 'Should not reject'
+          , 200
+
 
 it 'expsoes cache stream', ->
   zock
@@ -350,24 +359,27 @@ it 'expsoes cache stream', ->
     cache = exo.getCacheStream()
 
     cache.take(1).toPromise()
-    .then (cache) ->
-      b cache, {}
+      .then (cache) -> b cache, {}
+    .then ->
+      exo.stream 'users.all', {x: 'y'}
+      cache.take(1).toPromise()
+      .then (cache) -> b cache, {}
     .then ->
       exo.stream 'users.all', {x: 'y'}
       .take(1).toPromise()
-    .then ->
-      cache.take(1).toPromise()
-    .then (cache) ->
-      b _.isPlainObject cache
-      b _.keys(cache).length, 2
+      .then ->
+        cache.take(1).toPromise()
+        .then (cache) ->
+          b _.isPlainObject cache
+          b _.keys(cache).length, 2
     .then ->
       exo.stream 'users.next'
       .take(1).toPromise()
-    .then ->
-      cache.take(1).toPromise()
-    .then (cache) ->
-      b _.isPlainObject cache
-      b _.keys(cache).length, 3
+      .then ->
+        cache.take(1).toPromise()
+        .then (cache) ->
+          b _.isPlainObject cache
+          b _.keys(cache).length, 3
 
 it 'allows initializing from cache', ->
   requestCnt = 0
@@ -636,9 +648,21 @@ it 'passes errors after invalidating cache', ->
     .then (users) ->
       b users[0].name, 'joe'
       exo.invalidateAll()
-      exo.stream 'users.all'
-      .take(1).toPromise()
-    .then (-> throw new Error 'Expected error'), (-> null)
+
+      new Promise (resolve, reject) ->
+        if window?
+          exo.stream 'users.all'
+          .take(1).toPromise()
+          .then reject
+          .catch reject
+          setTimeout resolve, 100
+        else
+          exo.stream 'users.all'
+          .take(1).toPromise().catch -> resolve null
+
+          setTimeout ->
+            reject new Error 'Should not reject'
+          , 200
 
 # TODO: improve tests around this
 it 'invalidates resource by id', ->
